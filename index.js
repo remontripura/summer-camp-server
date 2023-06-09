@@ -28,7 +28,28 @@ async function run() {
         await client.connect();
 
         const classCollection = client.db('wolvesDb').collection('allClasses');
+        const usersCollection = client.db('wolvesDb').collection('users');
         const selectCollection = client.db('wolvesDb').collection('select');
+
+        // users api
+        app.get('/users', async(req, res) => {
+            const result = await usersCollection.find().toArray();
+            res.send(result);
+        })
+
+
+
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            const query = {email: user.email}
+            const existingUser = await usersCollection.findOne(query);
+            if(existingUser){
+                return res.send({message: 'user already exists'})
+            }
+            const result = await usersCollection.insertOne(user);
+            res.send(result)
+        })
+
 
         // find all data from class collection
         app.get('/class', async (req, res) => {
@@ -39,7 +60,6 @@ async function run() {
         // select collections
         app.get('/select', async (req, res) => {
             const email = req.query.email;
-            console.log(email)
             if (!email) {
                 return ([]);
             }
@@ -50,14 +70,13 @@ async function run() {
 
         app.post('/select', async (req, res) => {
             const item = req.body;
-            console.log(item)
             const result = await selectCollection.insertOne(item);
             res.send(result)
         })
 
-        app.delete('/select/:id', async(req, res) => {
+        app.delete('/select/:id', async (req, res) => {
             const id = req.params.id;
-            const query = {_id: new ObjectId(id)}
+            const query = { _id: new ObjectId(id) }
             const result = await selectCollection.deleteOne(query);
             res.send(result)
         })
