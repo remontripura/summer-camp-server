@@ -10,6 +10,21 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+const verifyJWT = (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+        return res.status(401).send({ error: true, message: 'unsuthorized access' });
+    }
+    const token = authorization.split(' ')[1];
+    jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+        if (err) {
+            return res.send(401).send({ error: true, message: 'unsuthorized access' })
+        }
+        req.decoded = decoded;
+        next();
+    })
+}
+
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qpfli06.mongodb.net/?retryWrites=true&w=majority`;
@@ -34,7 +49,8 @@ async function run() {
 
         // jwt
         app.post('/jwt', (req, res) => {
-            const token = jwt.sign(user, env.process.ACCESS_TOKEN, { expiresIn: '1hr' })
+            const user = req.body;
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '1hr' })
             res.send(token)
         })
 
@@ -88,11 +104,17 @@ async function run() {
         })
 
         // select collections
-        app.get('/select', async (req, res) => {
+        app.get('/select',verifyJWT, async (req, res) => {
             const email = req.query.email;
             if (!email) {
                 return ([]);
             }
+
+            const decodedEmail = req.decoded.email;
+            if(email !== decodedEmail){
+                return res.status(403).send({error: true, message: 'forbidden access'})
+            }
+
             const query = { email: email }
             const result = await selectCollection.find(query).toArray();
             res.send(result)
