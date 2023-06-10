@@ -2,6 +2,7 @@ const express = require('express');
 const app = express();
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+var jwt = require('jsonwebtoken');
 require('dotenv').config()
 const port = process.env.PORT || 5000;
 
@@ -56,10 +57,23 @@ async function run() {
                   role: `admin`
                 },
               };
-              const result = await usersCollection.updateOne(filter, updateDoc)
+              const result = await usersCollection.updateMany(filter, updateDoc)
               res.send(result)
         })
 
+        app.patch('/users/instructor/:id', async (req, res) => {
+            const id = req.params.id;
+            const filter = {_id: new ObjectId(id)}
+            const updateDoc = {
+                $set: {
+                  role: `instructor`
+                },
+              };
+              const result = await usersCollection.updateMany(filter, updateDoc)
+              res.send(result)
+        })
+
+       
 
         // find all data from class collection
         app.get('/class', async (req, res) => {
