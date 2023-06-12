@@ -3,6 +3,7 @@ const app = express();
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const stripe = require("stripe")(process.env.PAYMENT_SECRET)
 require('dotenv').config()
 const port = process.env.PORT || 5000;
 
@@ -76,7 +77,7 @@ async function run() {
         }
 
         // users api
-        app.get('/users', verifyJWT, verifyAdmin, async (req, res) => {
+        app.get('/users', async (req, res) => {
             const result = await usersCollection.find().toArray();
             res.send(result);
         })
@@ -92,12 +93,12 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/users/admin/:email', verifyJWT, async (req, res) => {
+        app.get('/users/admin/:email', async (req, res) => {
             const email = req.params.email;
 
-            if (req.decoded.email !== email) {
-                res.send({ admin: false })
-            }
+            // if (req.decoded.email !== email) {
+            //     return res.send({ admin: false })
+            // }
 
             const query = { email: email }
             const user = await usersCollection.findOne(query);
@@ -122,13 +123,13 @@ async function run() {
             const email = req.params.email;
 
             if (req.decoded.email !== email) {
-                res.send({ instructor: false })
+               return res.send({ instructor: false })
             }
 
             const query = { email: email }
             const user = await usersCollection.findOne(query);
             const result = { instructor: user?.role === 'instructor' }
-            res.send(result)
+            return res.send(result)
         })
 
         app.patch('/users/instructor/:id', async (req, res) => {
@@ -151,11 +152,37 @@ async function run() {
             res.send(result)
         })
 
-        app.post('/class',verifyJWT, verifyInstructor, async (req, res) => {
+        app.post('/class', async (req, res) => {
             const newClass = req.body;
             const result = await classCollection.insertOne(newClass);
             res.send(result)
         })
+
+        app.get('/class/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = {_id: new ObjectId(id)}
+            const result = await classCollection.findOne(query);
+            res.send(result)
+        })
+
+        app.put('/class/:id', async(req, res) => {
+            const id = req.params.id;
+            const filter = {_id: new ObjectId(id)}
+            const options = {upsert: true}
+            const updateClass = req.body;
+            const classes = {
+                $set: {
+                  name: updateClass.name,
+                  image: updateClass.image,
+                  price: updateClass.price,
+                  sheet: updateClass.sheet
+                },
+              };
+              const result = await classCollection.updateOne(filter, classes, options);
+              res.send(result)
+        })
+
+
 
         // select collections
         app.get('/select', verifyJWT, async (req, res) => {
