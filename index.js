@@ -1,10 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const app = express();
 const cors = require('cors');
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
-const stripe = require("stripe")(process.env.PAYMENT_SECRET)
-require('dotenv').config()
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const stripe = require('stripe')(process.env.PAYMENT_SECRET)
 const port = process.env.PORT || 5000;
 
 // middleware
@@ -26,8 +26,6 @@ const verifyJWT = (req, res, next) => {
     })
 }
 
-
-
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qpfli06.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -42,16 +40,17 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();
 
         const classCollection = client.db('wolvesDb').collection('allClasses');
         const usersCollection = client.db('wolvesDb').collection('users');
         const selectCollection = client.db('wolvesDb').collection('select');
+        const paymentCollection = client.db('wolvesDb').collection('payment');
 
         // jwt
         app.post('/jwt', (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '1hr' })
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '5hr' })
             res.send(token)
         })
 
@@ -93,18 +92,16 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/users/admin/:email', async (req, res) => {
+        app.get('/users/admin/:email',verifyJWT, async (req, res) => {
             const email = req.params.email;
-
-            // if (req.decoded.email !== email) {
-            //     return res.send({ admin: false })
-            // }
-
+            if (req.decoded.email !== email) {
+              return res.send({ admin: false })
+            }
             const query = { email: email }
             const user = await usersCollection.findOne(query);
             const result = { admin: user?.role === 'admin' }
-            res.send(result)
-        })
+            res.send(result);
+          })
 
         app.patch('/users/admin/:id', async (req, res) => {
             const id = req.params.id;
@@ -118,18 +115,18 @@ async function run() {
             res.send(result)
         })
 
-
+        // instructor api
         app.get('/users/instructor/:email', verifyJWT, async (req, res) => {
             const email = req.params.email;
 
             if (req.decoded.email !== email) {
-               return res.send({ instructor: false })
+                return res.send({ instructor: false })
             }
 
             const query = { email: email }
             const user = await usersCollection.findOne(query);
             const result = { instructor: user?.role === 'instructor' }
-            return res.send(result)
+            res.send(result)
         })
 
         app.patch('/users/instructor/:id', async (req, res) => {
@@ -160,28 +157,27 @@ async function run() {
 
         app.get('/class/:id', async (req, res) => {
             const id = req.params.id;
-            const query = {_id: new ObjectId(id)}
+            const query = { _id: new ObjectId(id) }
             const result = await classCollection.findOne(query);
             res.send(result)
         })
 
-        app.put('/class/:id', async(req, res) => {
+        app.put('/class/:id', async (req, res) => {
             const id = req.params.id;
-            const filter = {_id: new ObjectId(id)}
-            const options = {upsert: true}
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true }
             const updateClass = req.body;
             const classes = {
                 $set: {
-                  name: updateClass.name,
-                  image: updateClass.image,
-                  price: updateClass.price,
-                  sheet: updateClass.sheet
+                    name: updateClass.name,
+                    image: updateClass.image,
+                    price: updateClass.price,
+                    sheet: updateClass.sheet
                 },
-              };
-              const result = await classCollection.updateOne(filter, classes, options);
-              res.send(result)
+            };
+            const result = await classCollection.updateOne(filter, classes, options);
+            res.send(result)
         })
-
 
 
         // select collections
@@ -201,6 +197,13 @@ async function run() {
             res.send(result)
         })
 
+        app.get('/select/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id)}
+            const result = await selectCollection.findOne(query);
+            res.send(result)
+        })
+
         app.post('/select', async (req, res) => {
             const item = req.body;
             const result = await selectCollection.insertOne(item);
@@ -214,8 +217,40 @@ async function run() {
             res.send(result)
         })
 
+        // payment related api
+        app.post('/create-payment-intent', verifyJWT, async (req, res) => {
+            const { price } = req.body;
+            const amount = parseFloat(price * 100);
+            console.log(price, amount)
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: ['card']
+            });
+            res.send({
+                clientSecret: paymentIntent.client_secret
+            })
+
+        })
+
+        app.post('/payments', verifyJWT, async(req, res) => {
+            const payment = req.body;
+            const result = await paymentCollection.insertOne(payment);
+            const id = payment.items;
+            // const query = {_id: {$in: payment.items.find(id => new ObjectId(id))}}
+            const query = {_id: new ObjectId(id)}
+            const deleteItem = await selectCollection.deleteOne(query)
+
+            res.send({result, deleteItem})
+        })
+        app.get('/payments', async(req, res) => {
+            const result = await paymentCollection.find().toArray();
+            res.send(result)
+        })
+
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
+        // await client.db("admin").command({ ping: 1 });
+        
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
